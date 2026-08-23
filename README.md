@@ -15,12 +15,12 @@ the artifact *and* its own attestation at once.
 
 Splitting signing into its own job (`id-token: write` granted nowhere else)
 closes most of that gap already. This repo closes the rest: the signing
-job's *code* lives here, checked out at a ref hardcoded in this repo's own
-`sign.yml` (`env.TRUSTED_SIGNER_REF`) — deliberately not a value the caller
-can supply, so even a PR that fully rewrites `tenax-assay`'s own workflow
-file (or the pipeline code itself) in the same PR cannot also change what
-this job trusts. Bumping that ref is a separate, deliberate, reviewable
-change to *this* repo alone.
+job's *code* lives here, checked out at a commit SHA hardcoded in this
+repo's own `sign.yml` (`env.TRUSTED_SIGNER_SHA`) — deliberately not a
+value the caller can supply, so even a PR that fully rewrites
+`tenax-assay`'s own workflow file (or the pipeline code itself) in the
+same PR cannot also change what this job trusts. Bumping the pin is a
+separate, deliberate, reviewable commit to *this* repo alone.
 
 This repo is public deliberately: the signing logic isn't secret, and a
 public, independently-inspectable trust boundary is more credible than a
@@ -33,52 +33,18 @@ private one to anyone verifying a `tenax-assay` attestation.
   that file's header comment for the full contract (inputs, what it checks
   out, what it does and doesn't trust from the caller).
 
-## Releases and tag protection
-
-`tenax-assay`'s `attest` job tracks this repo's `v1` tag
-(`uses: tenax-io/tenax-attest/.github/workflows/sign.yml@v1`) rather than a
-pinned commit SHA — a new `v1.x.y` release here is picked up by every
-caller automatically, with no corresponding commit required on their side.
-The trade-off: the identity check `tenax-assay`'s verify gate runs
-(`--cert-identity .../sign.yml@refs/tags/v1`) matches by *ref name*, not by
-resolved commit — Fulcio certificates carry the ref a reusable workflow was
-checked out at, not the commit it happened to resolve to. That means the
-entire guarantee a commit-SHA pin used to provide — "this can only ever be
-the one specific, reviewed commit" — now depends completely on `v1` never
-being repointed to unreviewed code.
-
-**This repo's `v1` tag, and `tenax-assay`'s own `v1` tag** (which
-`TRUSTED_SIGNER_REF` in `sign.yml` tracks — see that file's header) **must
-both be protected by a repository ruleset**, not just ordinary branch
-protection:
-
-1. Settings → Rules → Rulesets → New ruleset → **Tag ruleset**.
-2. Target: tags matching `v*`.
-3. Enforcement status: Active.
-4. Rules: **Restrict deletions**, **Block force pushes** (this is what
-   prevents an existing `v1` from being silently repointed — without it,
-   moving the tag is exactly one `git push --force`), and restrict which
-   roles/bypass list may create or update matching refs to release
-   managers only.
-5. Apply the identical ruleset to `tenax-io/tenax-assay`'s `v1` tag —
-   `sign.yml`'s `TRUSTED_SIGNER_REF` trusts it the same way this repo's
-   `v1` is trusted, with no independent check on the other side.
-
-Treat changes to either ruleset with the same scrutiny as a
-branch-protection change on `main`: it is no longer a convenience setting,
-it is the mechanism that makes tag-based pinning here safe at all.
-
 ## Setup
 
-Done: this repo exists, `.github/workflows/sign.yml` is on `main`, and
-branch protection on `main` plus the tag-protection ruleset above are both
-in place — this file's integrity *is* the trust boundary.
+Done: this repo exists, `.github/workflows/sign.yml` is on `main`, and a
+branch-protection ruleset is in place — this file's integrity *is* the
+trust boundary, so `main` should stay protected the same way
+`tenax-io/tenax-assay`'s own default branch is.
 
 To wire it up:
 
-1. Cut a `v1.0.0` release (tag + GitHub Release) on `main`, and point the
-   `v1` tag at the same commit. In `tenax-io/tenax-assay`'s `assay.yml`,
-   swap the `attest` job's local placeholder steps for:
+1. Note the commit SHA of whatever's currently on `main`. In
+   `tenax-io/tenax-assay`'s `assay.yml`, swap the `attest` job's local
+   placeholder steps for:
 
    ```yaml
    attest:
@@ -86,7 +52,7 @@ To wire it up:
      permissions:
        id-token: write
        contents: read
-     uses: tenax-io/tenax-attest/.github/workflows/sign.yml@v1
+     uses: tenax-io/tenax-attest/.github/workflows/sign.yml@<that-sha> # v1
      with:
        artifact-name: unsigned-statements
        statement-files: |
@@ -95,15 +61,11 @@ To wire it up:
    ```
 
 2. Whenever `tenax-assay`'s signing code (`cli/sign.py`,
-   `cli/oidc_signer.py`) changes in a way you want the signer to pick up:
-   cut a new `tenax-assay` `v1.x.y` release and repoint *that repo's* `v1`
-   tag at it (its own release process) — `TRUSTED_SIGNER_REF` here already
-   tracks `refs/tags/v1`, so no edit is needed in this repo. Never
-   hand-edit `TRUSTED_SIGNER_REF` to a branch or an arbitrary ref, and
+   `cli/oidc_signer.py`) changes in a way you want the signer to pick up,
+   bump `env.TRUSTED_SIGNER_SHA` at the top of *this repo's* `sign.yml`, in
+   a deliberate, reviewed commit — never point it at a moving branch, and
    never re-expose it as a `tenax-assay`-supplied input.
-3. Whenever this repo's own `sign.yml` changes: cut a new `vX.Y.Z` release
-   here and repoint `v1` at it. Bump `env.SIGNER_WORKFLOW_REF` in
-   `tenax-assay`'s `assay.yml` only on a *major* version change (a new
-   `v2` that callers must opt into deliberately) — a `v1.x.y` release
-   requires no change on the caller side at all, that's the point of
-   tracking `v1`.
+3. Whenever this repo's own `sign.yml` changes, bump the SHA in
+   `tenax-assay`'s `uses:` line the same way every other pinned action in
+   that repo is bumped (full commit SHA, `# vX` comment, never a mutable
+   tag alone).
