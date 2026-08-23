@@ -15,11 +15,12 @@ the artifact *and* its own attestation at once.
 
 Splitting signing into its own job (`id-token: write` granted nowhere else)
 closes most of that gap already. This repo closes the rest: the signing
-job's *code* lives here, checked out at a commit SHA the caller pins
-independently of whatever ref triggered its own run — so even a PR that
-fully rewrites `tenax-assay`'s own workflow file (or the pipeline code
-itself) in the same PR cannot also change what this job trusts. Bumping
-the pin is a separate, deliberate, reviewable act.
+job's *code* lives here, checked out at a commit SHA hardcoded in this
+repo's own `sign.yml` (`env.TRUSTED_SIGNER_SHA`) — deliberately not a
+value the caller can supply, so even a PR that fully rewrites
+`tenax-assay`'s own workflow file (or the pipeline code itself) in the
+same PR cannot also change what this job trusts. Bumping the pin is a
+separate, deliberate, reviewable commit to *this* repo alone.
 
 This repo is public deliberately: the signing logic isn't secret, and a
 public, independently-inspectable trust boundary is more credible than a
@@ -57,13 +58,13 @@ To wire it up:
        statement-files: |
          tenax-assay.unsigned.json
          tenax-assay.slsa-provenance.unsigned.json
-       signer-ref: <a pinned tenax-assay commit SHA providing cli/sign.py>
    ```
 
 2. Whenever `tenax-assay`'s signing code (`cli/sign.py`,
    `cli/oidc_signer.py`) changes in a way you want the signer to pick up,
-   bump `signer-ref` in a deliberate, reviewed commit — never point it at
-   a moving branch.
+   bump `env.TRUSTED_SIGNER_SHA` at the top of *this repo's* `sign.yml`, in
+   a deliberate, reviewed commit — never point it at a moving branch, and
+   never re-expose it as a `tenax-assay`-supplied input.
 3. Whenever this repo's own `sign.yml` changes, bump the SHA in
    `tenax-assay`'s `uses:` line the same way every other pinned action in
    that repo is bumped (full commit SHA, `# vX` comment, never a mutable
