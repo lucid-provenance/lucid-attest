@@ -91,8 +91,23 @@ permissions: {}
 # *this* repo whenever tenax-assay's signing/provenance surface should
 # move; never point it at a branch, and never accept it as a value from
 # the calling workflow.
+#
+# CONTROL_PLANE_BUILDER_ID is this job's own identity, asserted into the
+# SLSA provenance statement's runDetails.builder.id (see the "Construct
+# SLSA Provenance" step below) -- and it MUST be passed to
+# `cli.main provenance` explicitly via --builder-id, never left to that
+# subcommand's own ambient-derivation fallback. A real run proved why:
+# GITHUB_WORKFLOW_REF inside this job reflects the top-level *calling*
+# workflow (e.g. some caller repo's own assay.yml), not this reusable
+# sign.yml actually executing the job -- so ambient derivation asserted
+# the caller's identity, not this job's, and cli/verify.py's SLSA Build
+# Level 2/3 checks correctly, fail-closed rejected the mismatch. This is
+# a hardcoded literal, not derived from ${{ github.repository }} either,
+# for the same reason: that context value is also the caller's repo in a
+# workflow_call job, not tenax-io/tenax-attest.
 env:
-  TRUSTED_SIGNER_SHA: ce61b58e03de8f0bd7c70d81b8ede5e41090b95f # tenax-assay main: feat(source-track+build-l3+provenance-subcommand)
+  TRUSTED_SIGNER_SHA: 7884d3e56a3fc50a1d8ee5997f026594d27c84c2 # tenax-assay main: fix(builder-id-explicit-override)
+  CONTROL_PLANE_BUILDER_ID: https://github.com/tenax-io/tenax-attest/.github/workflows/sign.yml
 
 jobs:
   sign:
@@ -165,21 +180,26 @@ jobs:
       # Constructs a SLSA v1.0 provenance statement from THIS job's own
       # ambient GitHub Actions context (cli/provenance.py, checked out
       # above at the same TRUSTED_SIGNER_SHA as the signing surface) --
-      # builder identity, source binding, and resolved dependencies all
-      # come from here, never from anything the untrusted build job
-      # claims. Written into ./unsigned/ alongside the caller's own
-      # statement(s) purely so the signing loop below can treat it
-      # identically; it was not part of what the caller uploaded.
+      # source binding and resolved dependencies come from here, never
+      # from anything the untrusted build job claims. --builder-id is
+      # passed explicitly (env.CONTROL_PLANE_BUILDER_ID, see its own
+      # comment above for why this must not be left to cli.main
+      # provenance's ambient-derivation fallback). Written into ./unsigned/
+      # alongside the caller's own statement(s) purely so the signing loop
+      # below can treat it identically; it was not part of what the
+      # caller uploaded.
       - name: Construct SLSA Provenance (Build Level 3)
         if: inputs['subject-name'] != ''
         env:
           SUBJECT_NAME: ${{ inputs.subject-name }}
           SUBJECT_DIGEST: ${{ inputs.subject-digest }}
+          BUILDER_ID: ${{ env.CONTROL_PLANE_BUILDER_ID }}
         run: |
           (cd _signer && uv run --no-sync python -m cli.main provenance \
             --subject-name "$SUBJECT_NAME" \
             --subject-digest "$SUBJECT_DIGEST" \
             --repo-dir ../_source \
+            --builder-id "$BUILDER_ID" \
             --out ../unsigned/provenance.unsigned.json)
 
       # Signs exactly the files the caller named, nothing else -- a file
