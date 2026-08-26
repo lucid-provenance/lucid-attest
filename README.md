@@ -52,20 +52,32 @@ To wire it up:
      permissions:
        id-token: write
        contents: read
-     uses: tenax-io/tenax-attest/.github/workflows/sign.yml@<that-sha> # v1
+     uses: tenax-io/tenax-attest/.github/workflows/sign.yml@<that-sha> # v3
      with:
        artifact-name: unsigned-statements
        statement-files: |
          tenax-assay.unsigned.json
-         tenax-assay.slsa-provenance.unsigned.json
+       subject-name: ${{ needs.build.outputs.image-ref }}
+       subject-digest: ${{ needs.build.outputs.image-digest }}
    ```
 
-2. Whenever `tenax-assay`'s signing code (`cli/sign.py`,
-   `cli/oidc_signer.py`) changes in a way you want the signer to pick up,
-   bump `env.TRUSTED_SIGNER_SHA` at the top of *this repo's* `sign.yml`, in
-   a deliberate, reviewed commit — never point it at a moving branch, and
-   never re-expose it as a `tenax-assay`-supplied input.
-3. Whenever this repo's own `sign.yml` changes, bump the SHA in
-   `tenax-assay`'s `uses:` line the same way every other pinned action in
-   that repo is bumped (full commit SHA, `# vX` comment, never a mutable
-   tag alone).
+   `subject-name`/`subject-digest` are optional — omit both to keep this
+   job doing exactly what it always did (sign the files named in
+   `statement-files`, nothing else). Supplying them opts this run into
+   also **constructing** a SLSA v1.0 provenance statement inside this
+   isolated job itself (SLSA Build Level 3 — see `sign.yml`'s header
+   comment) and signing it alongside the caller's own statement(s); the
+   caller's `build` job should no longer construct its own SLSA
+   provenance statement in that case (drop `--emit-slsa-provenance` from
+   its `cli.main` invocation) since this job now does that from its own
+   trusted context instead.
+
+2. Whenever `tenax-assay`'s signing/provenance code (`cli/sign.py`,
+   `cli/oidc_signer.py`, `cli/provenance.py`) changes in a way you want
+   the signer to pick up, bump `env.TRUSTED_SIGNER_SHA` at the top of
+   *this repo's* `sign.yml`, in a deliberate, reviewed commit — never
+   point it at a moving branch, and never re-expose it as a
+   `tenax-assay`-supplied input.
+3. Whenever this repo's own `sign.yml` changes, bump the SHA in the
+   caller's `uses:` line the same way every other pinned action is
+   bumped (full commit SHA, `# vX` comment, never a mutable tag alone).
