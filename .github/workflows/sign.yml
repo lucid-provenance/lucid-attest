@@ -106,7 +106,7 @@ permissions: {}
 # for the same reason: that context value is also the caller's repo in a
 # workflow_call job, not tenax-io/tenax-attest.
 env:
-  TRUSTED_SIGNER_SHA: 7884d3e56a3fc50a1d8ee5997f026594d27c84c2 # tenax-assay main: fix(builder-id-explicit-override)
+  TRUSTED_SIGNER_SHA: f46783df2d068dd7926a98d7454d6eb13d43e026 # tenax-assay main: feat(s2c2f-control-evaluation-rekor-log-url-verdict) (#44)
   CONTROL_PLANE_BUILDER_ID: https://github.com/tenax-io/tenax-attest/.github/workflows/sign.yml
 
 jobs:
