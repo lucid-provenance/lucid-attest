@@ -1,6 +1,6 @@
-# tenax-attest
+# lucid-attest
 
-The trusted signing boundary for [tenax-assay](https://github.com/tenax-io/tenax-assay)
+The trusted signing boundary for [lucid-assay](https://github.com/lucid-provenance/lucid-assay)
 attestations.
 
 ## What this is (and isn't)
@@ -18,18 +18,18 @@ closes most of that gap already. This repo closes the rest: the signing
 job's *code* lives here, checked out at a commit SHA hardcoded in this
 repo's own `sign.yml` (`env.TRUSTED_SIGNER_SHA`) — deliberately not a
 value the caller can supply, so even a PR that fully rewrites
-`tenax-assay`'s own workflow file (or the pipeline code itself) in the
+`lucid-assay`'s own workflow file (or the pipeline code itself) in the
 same PR cannot also change what this job trusts. Bumping the pin is a
 separate, deliberate, reviewable commit to *this* repo alone.
 
 This repo is public deliberately: the signing logic isn't secret, and a
 public, independently-inspectable trust boundary is more credible than a
-private one to anyone verifying a `tenax-assay` attestation.
+private one to anyone verifying a `lucid-assay` attestation.
 
 ## What's here
 
 - `.github/workflows/sign.yml` — the reusable `workflow_call` workflow.
-  Called from `tenax-io/tenax-assay`'s own `assay.yml` `attest` job. See
+  Called from `lucid-provenance/lucid-assay`'s own `assay.yml` `attest` job. See
   that file's header comment for the full contract (inputs, what it checks
   out, what it does and doesn't trust from the caller).
 
@@ -38,12 +38,12 @@ private one to anyone verifying a `tenax-assay` attestation.
 Done: this repo exists, `.github/workflows/sign.yml` is on `main`, and a
 branch-protection ruleset is in place — this file's integrity *is* the
 trust boundary, so `main` should stay protected the same way
-`tenax-io/tenax-assay`'s own default branch is.
+`lucid-provenance/lucid-assay`'s own default branch is.
 
 To wire it up:
 
 1. Note the commit SHA of whatever's currently on `main`. In
-   `tenax-io/tenax-assay`'s `assay.yml`, swap the `attest` job's local
+   `lucid-provenance/lucid-assay`'s `assay.yml`, swap the `attest` job's local
    placeholder steps for:
 
    ```yaml
@@ -52,11 +52,11 @@ To wire it up:
      permissions:
        id-token: write
        contents: read
-     uses: tenax-io/tenax-attest/.github/workflows/sign.yml@<that-sha> # v3
+     uses: lucid-provenance/lucid-attest/.github/workflows/sign.yml@<that-sha> # v3
      with:
        artifact-name: unsigned-statements
        statement-files: |
-         tenax-assay.unsigned.json
+         lucid-assay.unsigned.json
        subject-name: ${{ needs.build.outputs.image-ref }}
        subject-digest: ${{ needs.build.outputs.image-digest }}
    ```
@@ -72,12 +72,12 @@ To wire it up:
    its `cli.main` invocation) since this job now does that from its own
    trusted context instead.
 
-2. Whenever `tenax-assay`'s signing/provenance code (`cli/sign.py`,
+2. Whenever `lucid-assay`'s signing/provenance code (`cli/sign.py`,
    `cli/oidc_signer.py`, `cli/provenance.py`) changes in a way you want
    the signer to pick up, bump `env.TRUSTED_SIGNER_SHA` at the top of
    *this repo's* `sign.yml`, in a deliberate, reviewed commit — never
    point it at a moving branch, and never re-expose it as a
-   `tenax-assay`-supplied input.
+   `lucid-assay`-supplied input.
 3. Whenever this repo's own `sign.yml` changes, bump the SHA in the
    caller's `uses:` line the same way every other pinned action is
    bumped (full commit SHA, `# vX` comment, never a mutable tag alone).
