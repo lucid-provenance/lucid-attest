@@ -1,0 +1,13 @@
+# Everything except the two things the signer image build actually needs:
+# the Dockerfile's own build context (docker/) and the pinned lucid-assay
+# checkout (_signer/, created by build-signer-image.yml immediately before
+# `docker build` runs). Denylist-by-default rather than allowlist-by-
+# omission, so a new file added to this repo later doesn't silently end
+# up inside the image's build context without a deliberate exception here.
+*
+
+!Dockerfile
+!docker
+!docker/**
+!_signer
+!_signer/**

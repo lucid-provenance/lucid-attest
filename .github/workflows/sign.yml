@@ -6,27 +6,41 @@ name: Sign In-Toto Statement (Sigstore Keyless)
 # lucid-provenance/lucid-assay's .github/workflows/assay.yml `attest` job) -- never
 # invoked directly.
 #
+# Migrated 2026-08-31 (Lucid roadmap Milestone #18) from checking out
+# lucid-assay's source + `uv sync` on the runner, to `docker run` against
+# an immutable, Sigstore-signed image built by build-signer-image.yml. See
+# this repo's Dockerfile header for the full "what this closes, precisely"
+# rationale -- summary: uv.lock --frozen already made dependency
+# *integrity* deterministic; this closes OS/interpreter drift and a live
+# runtime dependency on PyPI's availability, on this one job.
+#
 # Why this lives in its own repo rather than as a job inside the calling
-# repo's own workflow file: env.TRUSTED_SIGNER_SHA below is a commit SHA of
-# lucid-provenance/lucid-assay hardcoded in *this* file -- it is deliberately NOT a
-# `workflow_call` input the caller can set. What actually executes is this
-# file, checked out from THIS repo at whatever ref the caller's `uses:`
-# line pins (see that line's own `# vX` comment for which one), so a PR to
-# lucid-assay that rewrites its own workflow file, or the pipeline code
-# TRUSTED_SIGNER_SHA points at, cannot also rewrite what this job trusts --
-# neither is part of that PR's diff at all, and neither can steer this job
-# to check out a different lucid-assay ref than the one pinned here.
-# Bumping TRUSTED_SIGNER_SHA (which lucid-assay commit's cli/sign.py +
-# cli/oidc_signer.py this job trusts enough to check out and run) is a
-# separate, deliberate, reviewable commit to *this* repo -- never something
-# a caller-side compromise (a malicious `workflow_call` input, a rewritten
-# assay.yml) can do by itself.
+# repo's own workflow file: env.TRUSTED_SIGNER_IMAGE_DIGEST below is an
+# image digest of a lucid-attest-signer build hardcoded in *this* file --
+# it is deliberately NOT a `workflow_call` input the caller can set. What
+# actually executes is this file, checked out from THIS repo at whatever
+# ref the caller's `uses:` line pins (see that line's own `# vX` comment
+# for which one), so a PR to lucid-assay that rewrites its own workflow
+# file, or the pipeline code the image was built from, cannot also rewrite
+# what this job trusts -- neither is part of that PR's diff at all, and
+# neither can steer this job to run a different image than the one pinned
+# here.
+# Bumping TRUSTED_SIGNER_IMAGE_DIGEST (which built image this job trusts
+# enough to run) is a separate, deliberate, reviewable commit to *this*
+# repo -- never something a caller-side compromise (a malicious
+# `workflow_call` input, a rewritten assay.yml) can do by itself. See
+# build-signer-image.yml for how a new digest actually gets produced --
+# that workflow's own SIGNER_SOURCE_SHA is the one place a lucid-assay
+# commit gets trusted; this file trusts only the resulting image digest,
+# never a source ref directly, and never rebuilds anything itself.
 #
 # A caller-controlled `signer-ref` input previously existed here and was
 # removed deliberately: the privileged job below (id-token: write) must
 # never execute code checked out from a ref an untrusted caller supplies
 # dynamically, no matter how independently that ref was described as
 # "pinned" -- the caller, not this repo, would still control the value.
+# The same discipline now applies one layer down: the image tag/digest
+# below is equally never caller-suppliable.
 #
 # id-token: write is granted to exactly one job, in exactly one workflow,
 # in this one repo. No other job anywhere in the calling repo's own
@@ -47,9 +61,10 @@ name: Sign In-Toto Statement (Sigstore Keyless)
 # closes the gap lucid-assay's README calls out: a compromised build job
 # can no longer forge buildDefinition/runDetails, because it no longer
 # constructs them at all -- only this isolated job does, atomically with
-# signing. See lucid-assay's cli/provenance.py for the construction logic
-# this job runs (checked out at TRUSTED_SIGNER_SHA below, same as the
-# signing surface already was).
+# signing. The container image (see Dockerfile) packages the exact
+# construction logic this job runs; ambient GITHUB_* env vars are passed
+# through explicitly below since `docker run` does not inherit the host
+# runner's environment implicitly.
 
 on:
   workflow_call:
@@ -84,18 +99,17 @@ on:
 
 permissions: {}
 
-# The one and only commit of lucid-provenance/lucid-assay this job will ever check
-# out cli/sign.py + cli/oidc_signer.py + cli/provenance.py from. Hardcoded
-# here rather than accepted as a workflow_call input -- see the file
-# header for why. Bump this in its own deliberate, reviewed commit to
-# *this* repo whenever lucid-assay's signing/provenance surface should
-# move; never point it at a branch, and never accept it as a value from
-# the calling workflow.
+# The one and only signer image this job will ever run. Hardcoded here
+# rather than accepted as a workflow_call input -- see the file header for
+# why. Bump this in its own deliberate, reviewed commit to *this* repo
+# whenever build-signer-image.yml publishes a new image that should take
+# over signing; never point it at a mutable tag, and never accept it as a
+# value from the calling workflow.
 #
 # CONTROL_PLANE_BUILDER_ID is this job's own identity, asserted into the
 # SLSA provenance statement's runDetails.builder.id (see the "Construct
-# SLSA Provenance" step below) -- and it MUST be passed to
-# `cli.main provenance` explicitly via --builder-id, never left to that
+# SLSA Provenance" step below) -- and it MUST be passed to the container's
+# `provenance` subcommand explicitly via --builder-id, never left to that
 # subcommand's own ambient-derivation fallback. A real run proved why:
 # GITHUB_WORKFLOW_REF inside this job reflects the top-level *calling*
 # workflow (e.g. some caller repo's own assay.yml), not this reusable
@@ -106,7 +120,7 @@ permissions: {}
 # for the same reason: that context value is also the caller's repo in a
 # workflow_call job, not lucid-provenance/lucid-attest.
 env:
-  TRUSTED_SIGNER_SHA: f46783df2d068dd7926a98d7454d6eb13d43e026 # lucid-assay main: feat(s2c2f-control-evaluation-rekor-log-url-verdict) (#44)
+  TRUSTED_SIGNER_IMAGE_DIGEST: ghcr.io/lucid-provenance/lucid-attest-signer@sha256:REPLACE_ME_after_build-signer-image_runs # produced by build-signer-image.yml, see its own job summary output
   CONTROL_PLANE_BUILDER_ID: https://github.com/lucid-provenance/lucid-attest/.github/workflows/sign.yml
 
 jobs:
@@ -117,20 +131,6 @@ jobs:
       contents: read
 
     steps:
-      # Explicit repository:/ref: -- this is NOT a self-checkout of
-      # lucid-attest. It checks out lucid-provenance/lucid-assay at the hardcoded
-      # env.TRUSTED_SIGNER_SHA above (never anything caller-supplied), into
-      # a subdirectory, purely to get the small, stable cli/sign.py +
-      # cli/oidc_signer.py signing surface (see those files' own
-      # docstrings) -- nothing from the calling build job's own checkout
-      # is trusted or reused here.
-      - name: Checkout Pinned lucid-assay Signer Code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          repository: lucid-provenance/lucid-assay
-          ref: ${{ env.TRUSTED_SIGNER_SHA }}
-          path: _signer
-
       # Read-only, for lockfile scanning ONLY -- nothing from this checkout
       # is ever executed (no build/test/install step touches it). `github.sha`
       # here is the *calling* workflow run's own commit (workflow_call jobs
@@ -138,56 +138,62 @@ jobs:
       # below is this job's own), so this is genuinely the source commit
       # the caller's build job built from, not anything it could redirect.
       # Skipped entirely when the caller didn't opt into provenance
-      # construction (no subject-name given).
+      # construction (no subject-name given). Mounted read-only into the
+      # container below -- the image itself never contains any caller's
+      # source, only lucid-assay's own signing/provenance code.
       - name: Checkout Caller Source (read-only, for dependency scanning only)
         if: inputs['subject-name'] != ''
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository }}
           ref: ${{ github.sha }}
           path: _source
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
-        with:
-          python-version: "3.13"
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-        with:
-          enable-cache: true
-          cache-dependency-glob: "_signer/uv.lock"
-
-      - name: Install Signer Dependencies
-        working-directory: _signer
-        run: uv sync --frozen --extra dev
-
       - name: Cache Sigstore TUF Metadata
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.local/share/sigstore-python
-          key: sigstore-tuf-${{ runner.os }}-${{ env.TRUSTED_SIGNER_SHA }}
+          key: sigstore-tuf-${{ runner.os }}-${{ env.TRUSTED_SIGNER_IMAGE_DIGEST }}
           restore-keys: |
             sigstore-tuf-${{ runner.os }}-
 
       - name: Download Unsigned Statements
-        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ inputs.artifact-name }}
           path: unsigned
 
+      # Host-side directories, created before any bind mount: an
+      # unmounted destination path handed to `docker run -v` gets
+      # auto-created by the Docker daemon (running as root) if it doesn't
+      # already exist, which would make it unwritable by the non-root
+      # `--user "$(id -u):$(id -g)"` override every docker run call below
+      # uses. Creating them here, as the runner's own user, avoids that
+      # entirely. actions/cache above may already have created the TUF
+      # cache dir; -p makes that a no-op either way.
+      - name: Prepare host directories for container mounts
+        run: |
+          mkdir -p signed
+          mkdir -p "$HOME/.local/share/sigstore-python"
+
       # Constructs a SLSA v1.0 provenance statement from THIS job's own
-      # ambient GitHub Actions context (cli/provenance.py, checked out
-      # above at the same TRUSTED_SIGNER_SHA as the signing surface) --
-      # source binding and resolved dependencies come from here, never
-      # from anything the untrusted build job claims. --builder-id is
-      # passed explicitly (env.CONTROL_PLANE_BUILDER_ID, see its own
-      # comment above for why this must not be left to cli.main
-      # provenance's ambient-derivation fallback). Written into ./unsigned/
-      # alongside the caller's own statement(s) purely so the signing loop
-      # below can treat it identically; it was not part of what the
-      # caller uploaded.
+      # ambient GitHub Actions context (cli/provenance.py, packaged into
+      # the pinned signer image above) -- source binding and resolved
+      # dependencies come from here, never from anything the untrusted
+      # build job claims. --builder-id is passed explicitly
+      # (env.CONTROL_PLANE_BUILDER_ID, see its own comment above for why
+      # this must not be left to the container's ambient-derivation
+      # fallback). Written into ./unsigned/ alongside the caller's own
+      # statement(s) purely so the signing loop below can treat it
+      # identically; it was not part of what the caller uploaded.
+      #
+      # `docker run` does not inherit the runner's environment implicitly
+      # -- every ambient GITHUB_* value cli.provenance's own
+      # ambient-derivation reads (see cli/slsa_provenance.py) is passed
+      # through explicitly via bare `-e VARNAME`, which forwards the
+      # value from this step's own shell environment without ever writing
+      # it into the command line itself.
       - name: Construct SLSA Provenance (Build Level 3)
         if: inputs['subject-name'] != ''
         env:
@@ -195,22 +201,34 @@ jobs:
           SUBJECT_DIGEST: ${{ inputs.subject-digest }}
           BUILDER_ID: ${{ env.CONTROL_PLANE_BUILDER_ID }}
         run: |
-          (cd _signer && uv run --no-sync python -m cli.main provenance \
-            --subject-name "$SUBJECT_NAME" \
-            --subject-digest "$SUBJECT_DIGEST" \
-            --repo-dir ../_source \
-            --builder-id "$BUILDER_ID" \
-            --out ../unsigned/provenance.unsigned.json)
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            -e GITHUB_REPOSITORY \
+            -e GITHUB_SERVER_URL \
+            -e GITHUB_SHA \
+            -e GITHUB_WORKFLOW_REF \
+            -e GITHUB_RUN_ID \
+            -e GITHUB_RUN_ATTEMPT \
+            -e RUNNER_ENVIRONMENT \
+            -v "$PWD/_source:/workspace/_source:ro" \
+            -v "$PWD/unsigned:/workspace/unsigned" \
+            "$TRUSTED_SIGNER_IMAGE_DIGEST" \
+            provenance \
+              --subject-name "$SUBJECT_NAME" \
+              --subject-digest "$SUBJECT_DIGEST" \
+              --repo-dir /workspace/_source \
+              --builder-id "$BUILDER_ID" \
+              --out /workspace/unsigned/provenance.unsigned.json
 
       # Signs exactly the files the caller named, nothing else -- a file
       # present in the artifact but not listed in inputs.statement-files
-      # is silently ignored, not swept up. Each `lucid-assay sign` call
-      # (cli/sign.py, checked out above) reads only that one file's bytes;
-      # it never touches anything else this job downloaded.
+      # is silently ignored, not swept up. Each `docker run` invocation
+      # (the pinned signer image, see Dockerfile) reads only that one
+      # file's bytes; it never touches anything else this job downloaded.
       #
       # inputs.statement-files is caller-supplied, so every line read out of
       # it is treated as hostile input, not a trusted filename, before it
-      # touches the filesystem or the Python CLI:
+      # touches the filesystem or the container:
       #   - rejected outright if it contains `/`, `\`, or `..` -- a bare
       #     filename can never walk outside ./unsigned/ (the only directory
       #     this step ever reads from) via a path-traversal or separator
@@ -218,13 +236,19 @@ jobs:
       #   - `basename -- "$f" ...` (the `--`) stops a hyphen-prefixed
       #     filename (e.g. "--help.unsigned.json") from being parsed as a
       #     flag by basename itself.
+      #
+      # ACTIONS_ID_TOKEN_REQUEST_URL/_TOKEN are the ambient OIDC
+      # credentials cli.oidc_signer fetches its Sigstore identity token
+      # from -- forwarded by bare `-e VARNAME` (value taken from this
+      # step's own environment, never written into the command line or
+      # this file), the only way they reach the container at all since
+      # `docker run` does not inherit the runner's environment implicitly.
       - name: Sign Statements
         env:
           STATEMENT_FILES: ${{ inputs.statement-files }}
           SUBJECT_NAME: ${{ inputs.subject-name }}
           DRY_RUN_SIGN: ${{ inputs.dry-run-sign }}
         run: |
-          mkdir -p signed
           DRY_RUN_ARGS=()
           if [ "$DRY_RUN_SIGN" = "true" ]; then
             DRY_RUN_ARGS=(--dry-run-sign)
@@ -251,12 +275,21 @@ jobs:
             esac
 
             base="$(basename -- "$f" .unsigned.json)"
-            (cd _signer && uv run --no-sync python -m cli.main sign \
-              "../unsigned/$f" --out "../signed/${base}.dsse.json" "${DRY_RUN_ARGS[@]}")
+            docker run --rm \
+              --user "$(id -u):$(id -g)" \
+              -e ACTIONS_ID_TOKEN_REQUEST_URL \
+              -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
+              -v "$PWD/unsigned:/workspace/unsigned:ro" \
+              -v "$PWD/signed:/workspace/signed" \
+              -v "$HOME/.local/share/sigstore-python:/home/signer/.local/share/sigstore-python" \
+              "$TRUSTED_SIGNER_IMAGE_DIGEST" \
+              sign "/workspace/unsigned/$f" \
+                --out "/workspace/signed/${base}.dsse.json" \
+                "${DRY_RUN_ARGS[@]}"
           done <<< "$ALL_FILES"
 
       - name: Upload Signed Statements
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: signed-statements
           path: signed/
