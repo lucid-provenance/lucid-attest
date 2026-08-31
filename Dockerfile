@@ -122,8 +122,8 @@ RUN apt-get update \
 # (a fixed in-image UID essentially never matches the runner's own UID).
 RUN groupadd --gid 65532 signer \
  && useradd --uid 65532 --gid signer --no-create-home --shell /usr/sbin/nologin signer \
- && mkdir -p /workspace /home/signer/.local/share/sigstore-python \
- && chown -R signer:signer /workspace /home/signer
+ && mkdir -p /workspace \
+ && chown signer:signer /workspace
 
 WORKDIR /app
 COPY --from=builder /build/site-packages /app/site-packages
@@ -147,10 +147,23 @@ COPY _signer/cli/parsers/lockfiles.py   cli/parsers/lockfiles.py
 # cli.main import into one of the files above. See its own docstring.
 COPY docker/signer_entrypoint.py /app/entrypoint.py
 
+# HOME=/tmp, not /home/signer: every real invocation (sign.yml) overrides
+# the container's user via `--user "$(id -u):$(id -g)"` to the GitHub
+# Actions runner's own arbitrary UID, not the baked-in `signer` (65532) --
+# so at runtime, `/home/signer` (owned by signer:signer, normal
+# permissions) can be traversed by that UID but not written to. A real CI
+# run proved this the hard way: sigstore-python's own code wants to create
+# a cache directory under $HOME (`~/.cache`, not the `~/.local/share/
+# sigstore-python` TUF path this image originally special-cased and
+# bind-mounted) and failed with a permission error, because that path was
+# never pre-created for an arbitrary UID. Rather than special-case every
+# path some dependency might someday want to write under $HOME, point
+# HOME at /tmp -- world-writable (sticky bit, mode 1777) by default in
+# this base image regardless of which UID is running.
 ENV PYTHONPATH=/app:/app/site-packages \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HOME=/home/signer
+    HOME=/tmp
 
 WORKDIR /workspace
 USER signer
