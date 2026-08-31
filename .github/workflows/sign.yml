@@ -120,7 +120,15 @@ permissions: {}
 # for the same reason: that context value is also the caller's repo in a
 # workflow_call job, not lucid-provenance/lucid-attest.
 env:
-  TRUSTED_SIGNER_IMAGE_DIGEST: ghcr.io/lucid-provenance/lucid-attest-signer@sha256:REPLACE_ME_after_build-signer-image_runs # produced by build-signer-image.yml, see its own job summary output
+  # Produced by build-signer-image.yml's run against SIGNER_SOURCE_SHA
+  # 5be1735eccce45b63235cdffda0380cb73cf2cf5 (lucid-assay main, PR #51).
+  # Pasted from that run's job summary -- not independently re-verified
+  # against the registry (this image is a private GHCR package; no
+  # anonymous pull token was available to confirm it from here). If this
+  # digest is ever wrong, the failure mode is a loud, safe one: `docker
+  # pull`/`docker run` fails outright in the Sign Statements step below,
+  # not a silent substitution of a different image.
+  TRUSTED_SIGNER_IMAGE_DIGEST: ghcr.io/lucid-provenance/lucid-attest-signer@sha256:f68c747e9a3cc4bdd878466179f75f7648d90deb15ac89f8de8157a0786c89a8
   CONTROL_PLANE_BUILDER_ID: https://github.com/lucid-provenance/lucid-attest/.github/workflows/sign.yml
 
 jobs:
