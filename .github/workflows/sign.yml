@@ -290,7 +290,7 @@ jobs:
               -e ACTIONS_ID_TOKEN_REQUEST_TOKEN \
               -v "$PWD/unsigned:/workspace/unsigned:ro" \
               -v "$PWD/signed:/workspace/signed" \
-              -v "$HOME/.local/share/sigstore-python:/home/signer/.local/share/sigstore-python" \
+              -v "$HOME/.local/share/sigstore-python:/tmp/.local/share/sigstore-python" \
               "$TRUSTED_SIGNER_IMAGE_DIGEST" \
               sign "/workspace/unsigned/$f" \
                 --out "/workspace/signed/${base}.dsse.json" \
