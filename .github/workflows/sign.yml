@@ -120,16 +120,18 @@ permissions: {}
 # for the same reason: that context value is also the caller's repo in a
 # workflow_call job, not lucid-provenance/lucid-attest.
 env:
-  # Produced by build-signer-image.yml's first real run against
-  # SIGNER_SOURCE_SHA 5be1735eccce45b63235cdffda0380cb73cf2cf5 (lucid-assay
-  # main, PR #51). Pasted from the "Build and push signer image" step's
-  # own log output (the `digest:` line docker/build-push-action prints) --
-  # not independently re-verified against the registry (this image is a
-  # private GHCR package; no anonymous pull token was available to confirm
-  # it from here). If this digest is ever wrong, the failure mode is a
-  # loud, safe one: `docker pull`/`docker run` fails outright in the Sign
-  # Statements step below, not a silent substitution of a different image.
-  TRUSTED_SIGNER_IMAGE_DIGEST: ghcr.io/lucid-provenance/lucid-attest-signer@sha256:1b316a156cfcf09b1b0885d0831abd66dc07fc9eb86e8210bf18499eca579c6f
+  # Rebuilt after the HOME=/tmp fix (PR #10) -- the first real end-to-end
+  # CI run against the previous digest failed with a permission error
+  # (see that PR's own commit message) before ever reaching this pin, so
+  # that digest was never actually exercised successfully. This one is:
+  # confirmed via a direct registry query (GET .../manifests/sha256:...
+  # against ghcr.io, 200 OK, docker-content-digest header matches exactly)
+  # now that the lucid-attest-signer package is public -- not just pasted
+  # and trusted. Still built from SIGNER_SOURCE_SHA
+  # 5be1735eccce45b63235cdffda0380cb73cf2cf5 (lucid-assay main, PR #51);
+  # only lucid-attest's own Dockerfile changed between this build and the
+  # last one.
+  TRUSTED_SIGNER_IMAGE_DIGEST: ghcr.io/lucid-provenance/lucid-attest-signer@sha256:ded8a004a631b0dd40307e4d532da6da64879fe7fee6976f93032b65b0ddfc58
   CONTROL_PLANE_BUILDER_ID: https://github.com/lucid-provenance/lucid-attest/.github/workflows/sign.yml
 
 jobs:
