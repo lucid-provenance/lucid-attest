@@ -31,17 +31,15 @@ on:
 permissions: {}
 
 env:
-  # TODO(before first real run): replace with the actual merged commit of
-  # lucid-provenance/lucid-assay containing the cli.sign / cli.common
-  # refactor that removes cli/sign.py's `from .main import
-  # derive_signed_path` import (see that PR's own description). Building
-  # this image against any earlier lucid-assay commit would copy in a
-  # cli/sign.py that still imports cli.main -- which this Dockerfile
-  # deliberately does not COPY in at all -- and the image would fail to
-  # start. Deliberately left as an obviously-non-functional placeholder
-  # rather than a fabricated-looking SHA, so this can't be run by
-  # accident against the wrong source.
-  SIGNER_SOURCE_SHA: "REPLACE_ME_pending_lucid-assay_narrow-import_PR_merge"
+  # lucid-assay main: "Move derive_signed_path out of cli.main so cli.sign
+  # doesn't import it" (PR #51, merged via merge commit ec5027d -- 5be1735
+  # itself is an ancestor of main, not a squashed/rewritten commit).
+  # Confirmed via `git merge-base --is-ancestor 5be1735 origin/main` before
+  # pinning this. This is the first lucid-assay commit safe to build this
+  # image from -- any earlier commit's cli/sign.py still imports cli.main,
+  # which this Dockerfile deliberately does not COPY in at all, and the
+  # image would fail to start.
+  SIGNER_SOURCE_SHA: "5be1735eccce45b63235cdffda0380cb73cf2cf5"
   IMAGE_NAME: ghcr.io/lucid-provenance/lucid-attest-signer
 
 jobs:
